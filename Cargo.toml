@@ -1,0 +1,37 @@
+[package]
+name = "kavimo-download"
+version = "1.0.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+aes = "0.8.3"
+aes-gcm = "0.10.3"
+base64 = "0.21.7"
+cbc = "0.1.2"
+futures = "0.3.30"
+hex = "0.4.3"
+kdam = { version = "0.5.1", features = ["rich"] }
+libaes = "0.7.0"
+libc = "0.2.153"
+pbkdf2 = { version = "0.12.2", features = ["simple"] }
+rand_core = { version = "0.6.4", features = ["std"] }
+regex = "1.10.3"
+reqwest = "0.11.24"
+serde = { version = "1.0.196", features = ["derive"] }
+serde_json = "1.0.113"
+sha2 = "0.10.8"
+tokio = { version = "1.35.1", features = ["full"] }
+url = "2.5.0"
+
+[build]
+target = "x86_64-pc-windows-gnu"
+
+[profile.release]
+lto = true
+opt-level = 'z'
+codegen-units = 1
+debug = false
+strip = "symbols"
+panic = "abort"

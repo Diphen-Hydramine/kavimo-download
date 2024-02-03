@@ -1,0 +1,6 @@
+ffmpeg version: 6.1
+
+ffmpeg confing: --disable-everything --disable-network --disable-autodetect --enable-small --enable-demuxer=mpegts --enable-muxer=mp4 --enable-parser='aac,h264' --enable-decoder='aac,h264' --enable-protocol=file --enable-avformat
+
+build tools: mingw gcc x64 I think V13...
+ 
