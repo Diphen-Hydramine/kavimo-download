@@ -2,7 +2,7 @@
 
 ## Quick start
 
-1) download the latests version from here.
+1) download the latests version from [here](https://github.com/Diphen-Hydramine/kavimo-download/releases/download/v1.0.0/kavimo-download.exe).
 2) provide the iframe link to application.
 3) have a happy ending :)
 
