@@ -2,9 +2,9 @@
 
 ## Quick start
 
-1) download the latests version from [here](https://github.com/Diphen-Hydramine/kavimo-download/releases/download/v1.0.0/kavimo-download.exe).
-2) provide the iframe link to application.
-3) have a happy ending :)
+1) Download the latests version from [here](https://github.com/Diphen-Hydramine/kavimo-download/releases/download/v1.0.0/kavimo-download.exe).
+2) Provide the iframe link to application.
+3) Have a happy ending :)
 
 All kavimo hosted videoes are inside \<iframe> tags href attribute of those iframes are similar to 
 
@@ -12,11 +12,17 @@ All kavimo hosted videoes are inside \<iframe> tags href attribute of those ifra
 
 the only thing program needs from you is this link and the rest is managed automatically.
 
-* you should turn off you anti virus software if you want to use the prebuilt version.
-* phone number and all other drm_text attributes are removed from the video.
+* You should turn off you anti virus software if you want to use the prebuilt version.
+* Phone number and all other drm_text attributes are removed from the video.
+
+## Batch Download
+
+Program supports a --file flag that can be used to do batch downloading
+
+```kavimo-download.exe --file example-batch-file.txt```
 
 ## How does it work?
-* This product uses FFmpeg under the hood to convert mpeg stream to mp4 because mpeg streams kinda lag in most video playing software
+* This app uses FFmpeg under the hood to convert mpeg stream to mp4 because mpeg streams kinda lag in most video playing software
 * The rest is reverse engineered from the Vis2.js Product, a web video player from kavimo
 
 ## Notes

@@ -39,8 +39,8 @@ pub struct VideoData {
 }
 
 pub struct Video {
-    video_id: String,
-    video_host: String,
+    pub video_id: String,
+    pub video_host: String,
     client: Client,
 }
 
@@ -93,7 +93,7 @@ impl Video {
         }
     }
 
-    pub async fn download(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn download(&self, best_quality: bool) -> Result<(), Box<dyn std::error::Error>> {
         println!("[Progress] fetching embed files");
 
         let embed_url = format!("https://{}/{}/embed", &self.video_host, &self.video_id);
@@ -125,6 +125,18 @@ impl Video {
             }
         }
 
+        let mut safe_title = embed_video_data.title;
+        for char in  r#"\/:*?"<>|"#.chars() {
+            safe_title = safe_title.replace(char, "-");
+        }
+
+        match fs::metadata(format!("{}.mp4", &safe_title)) {
+            Ok(_) => {
+                return Err("Video already downloaded".into());
+            }
+            Err(_) => ()
+        }
+
         println!("[Progress] Fetching playlists");
 
         let playlist_url = format!(
@@ -141,18 +153,23 @@ impl Video {
         let encrypted_playlist_text = playlist_res.text().await?;
 
         let playlist_text = Self::decrypt_m3u8(&embed_video_data.msgn, &encrypted_playlist_text)?;
-        println!("[Prompt] Select desired quality: ");
-        for (index, video_quality) in embed_video_data.download.iter().enumerate() {
-            println!("[Choice] {} -> {}", video_quality.name, index);
+        if !best_quality {
+            println!("[Prompt] Select desired quality: ");
+            for (index, video_quality) in embed_video_data.download.iter().enumerate() {
+                println!("[Choice] {} -> {}", video_quality.name, index);
+            }
         }
 
-        let mut index_string = String::new();
+        let mut index_string = String::from("0");
         let mut valid_selection = false;
         let mut selected_playlist_link = "";
         let mut q_index = 0;
         while !valid_selection {
-            std::io::stdin().read_line(&mut index_string)?;
-            index_string = index_string.trim().to_string();
+            if !best_quality {
+                index_string.clear();
+                std::io::stdin().read_line(&mut index_string)?;
+                index_string = index_string.trim().to_string();
+            }
             match index_string.parse::<usize>() {
                 Ok(index) => {
                     let target_line = (index + 1) * 2;
@@ -168,8 +185,11 @@ impl Video {
                     }
                 }
                 Err(_) => {
-                    println!("[Error] Cannot parse input to u8 try again:");
+                    println!("[Error] Cannot parse input to usize try again:");
                 }
+            }
+            if best_quality && !valid_selection {
+                return Err("Unable to get best quality".into());
             }
         }
 
@@ -220,10 +240,6 @@ impl Video {
         let download_semaphore = Arc::new(Semaphore::new(10));
         let mut download_handles = Vec::new();
 
-        let mut safe_title = embed_video_data.title;
-        for char in  r#"\/:*?"<>|"#.chars() {
-            safe_title = safe_title.replace(char, "-");
-        }
 
         let _ = fs::create_dir(&safe_title);
         let arc_cipher_key = Arc::new(cipher_key);
