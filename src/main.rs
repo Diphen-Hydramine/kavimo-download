@@ -54,6 +54,7 @@ async fn main() {
     let mut input_valid = false;
 
     while !input_valid {
+        user_input.clear();
         stdin().read_line(&mut user_input).unwrap();
         // user_input = "https://stream.biomaze.ir/b6tnnbbopku1/iframe".to_string();
         user_input = user_input.trim().to_owned();

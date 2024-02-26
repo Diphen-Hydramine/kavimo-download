@@ -53,6 +53,7 @@ impl Video {
                 .parse()
                 .unwrap(),
         );
+
         let client = reqwest::ClientBuilder::new()
             .user_agent(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
@@ -121,7 +122,7 @@ impl Video {
                 embed_video_data = serde_json::from_slice(&decoded_json_string)?;
             }
             None => {
-                return Err("".into());
+                return Err("Cannot extract embed data".into());
             }
         }
 
@@ -221,6 +222,7 @@ impl Video {
                 match line.split('"').nth(1) {
                     Some(link) => {
                         let res = self.client.get(link).send().await?;
+                        println!("[Progress] Key uri reponse code: '{}'", res.status());
                         if res.status() != 200 {
                             return Err("Key uri returned none 200 status".into());
                         }
@@ -329,7 +331,14 @@ impl Video {
             Err(_) => ()
         }
 
-        let bytes = client.get(link).send().await.unwrap().bytes().await.unwrap();
+        let res = client.get(&link).send().await.unwrap();
+        // corrupted part 
+        if res.status() == 502 || res.status() == 504 {            
+            println!("[WARNING] Part {} of video seems to be corrupted you will experience some freezeing", index);
+            let _file = fs::File::create(file_path).unwrap();
+            return ;
+        }
+        let bytes = res.bytes().await.unwrap();
         let mut bytes = bytes.to_vec();
         let cipher = cbc::Decryptor::<aes::Aes128>::new(key.as_slice().into(), iv.as_slice().into());
 
