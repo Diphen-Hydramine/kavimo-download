@@ -97,9 +97,6 @@ impl Video {
     }
 
     pub async fn download(&self, is_in_batch: bool) -> Result<(), Box<dyn std::error::Error>> {
-        if is_in_batch && self.desired_quality.is_none() {
-            return Err("No desired quality specified with batch mode".into());
-        }
         println!("[Progress] fetching embed files");
 
         let embed_url = format!("https://{}/{}/embed", &self.video_host, &self.video_id);
@@ -166,13 +163,13 @@ impl Video {
             }
         }
 
-        let mut index_string = String::from("");
+        let mut index_string = String::from("0");
         let mut valid_selection = false;
         let mut selected_playlist_link = "";
         let mut q_index = 0;
         if let Some(desired_quality) = &self.desired_quality {
             let desired_quality = desired_quality.to_owned() + "p";
-            let found_index = embed_video_data.download.iter().position(|x| x.name == desired_quality).ok_or("Specified Quality is unavalable in video")?;
+            let found_index = embed_video_data.download.iter().position(|x| x.name == desired_quality).ok_or(format!("Specified quality {} is unavalable in video", &desired_quality))?;
             let target_line = (found_index + 1) * 2;
             match playlist_text.split('\n').nth(target_line) {
                 Some(link) => {
@@ -181,14 +178,17 @@ impl Video {
                     selected_playlist_link = link;
                 }
                 None => {
+                    // it's impossible because index is already found in embed data
                     return Err("This should never be shown to user (impossible error)".into());
                 }
             }
         }
         while !valid_selection {
-            index_string.clear();
-            std::io::stdin().read_line(&mut index_string)?;
-            index_string = index_string.trim().to_string(); 
+            if !is_in_batch {
+                index_string.clear();
+                std::io::stdin().read_line(&mut index_string)?;
+                index_string = index_string.trim().to_string(); 
+            }
             match index_string.parse::<usize>() {
                 Ok(index) => {
                     let target_line = (index + 1) * 2;

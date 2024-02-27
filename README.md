@@ -25,9 +25,12 @@ Syntax for each line of file is as:
 
 `<video> <quality>`
 
+where quality is optional
+
 e.g.:
 
 `https://stream.kavimo.com/fqvpum2y8drk/embed 480`
+`https://stream.kavimo.com/fqvpum2y8drk/embed`
 
 ## How does it work?
 * This app uses FFmpeg under the hood to convert mpeg stream to mp4 because mpeg streams kinda lag in most video playing software

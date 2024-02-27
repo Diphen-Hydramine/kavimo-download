@@ -26,10 +26,7 @@ async fn main() {
                 for line in file_content.lines() {
                     dbg!(line);
                     if let Ok(video) = parse_video(line) {
-                        if video.desired_quality.is_some() {
-                            videos.push(video);
-                        }
-                        println!("[ERROR] '{}' does not include a quality. valid format should be as:\nhttps://stream.biomaze.ir/b6tnnbbopku1/iframe 720", line);
+                        videos.push(video);
                     } else {
                         println!("[ERROR] '{}' is not a valid link", line);
                     }
