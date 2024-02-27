@@ -41,11 +41,12 @@ pub struct VideoData {
 pub struct Video {
     pub video_id: String,
     pub video_host: String,
+    pub desired_quality: Option<String>,
     client: Client,
 }
 
 impl Video {
-    pub fn new(video_id: String, video_host: String) -> Self {
+    pub fn new(video_id: String, video_host: String, desired_quality: Option<String>) -> Self {
         let mut headers = HeaderMap::new();
         headers.insert(
             header::REFERER,
@@ -65,6 +66,7 @@ impl Video {
         Self {
             video_id,
             video_host,
+            desired_quality,
             client,
         }
     }
@@ -94,7 +96,10 @@ impl Video {
         }
     }
 
-    pub async fn download(&self, best_quality: bool) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn download(&self, is_in_batch: bool) -> Result<(), Box<dyn std::error::Error>> {
+        if is_in_batch && self.desired_quality.is_none() {
+            return Err("No desired quality specified with batch mode".into());
+        }
         println!("[Progress] fetching embed files");
 
         let embed_url = format!("https://{}/{}/embed", &self.video_host, &self.video_id);
@@ -154,23 +159,36 @@ impl Video {
         let encrypted_playlist_text = playlist_res.text().await?;
 
         let playlist_text = Self::decrypt_m3u8(&embed_video_data.msgn, &encrypted_playlist_text)?;
-        if !best_quality {
+        if !is_in_batch && self.desired_quality.is_none() {
             println!("[Prompt] Select desired quality: ");
             for (index, video_quality) in embed_video_data.download.iter().enumerate() {
                 println!("[Choice] {} -> {}", video_quality.name, index);
             }
         }
 
-        let mut index_string = String::from("0");
+        let mut index_string = String::from("");
         let mut valid_selection = false;
         let mut selected_playlist_link = "";
         let mut q_index = 0;
-        while !valid_selection {
-            if !best_quality {
-                index_string.clear();
-                std::io::stdin().read_line(&mut index_string)?;
-                index_string = index_string.trim().to_string();
+        if let Some(desired_quality) = &self.desired_quality {
+            let desired_quality = desired_quality.to_owned() + "p";
+            let found_index = embed_video_data.download.iter().position(|x| x.name == desired_quality).ok_or("Specified Quality is unavalable in video")?;
+            let target_line = (found_index + 1) * 2;
+            match playlist_text.split('\n').nth(target_line) {
+                Some(link) => {
+                    valid_selection = true;
+                    q_index = found_index;
+                    selected_playlist_link = link;
+                }
+                None => {
+                    return Err("This should never be shown to user (impossible error)".into());
+                }
             }
+        }
+        while !valid_selection {
+            index_string.clear();
+            std::io::stdin().read_line(&mut index_string)?;
+            index_string = index_string.trim().to_string(); 
             match index_string.parse::<usize>() {
                 Ok(index) => {
                     let target_line = (index + 1) * 2;
@@ -189,7 +207,7 @@ impl Video {
                     println!("[Error] Cannot parse input to usize try again:");
                 }
             }
-            if best_quality && !valid_selection {
+            if is_in_batch && !valid_selection {
                 return Err("Unable to get best quality".into());
             }
         }

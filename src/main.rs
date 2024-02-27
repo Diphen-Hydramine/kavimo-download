@@ -23,11 +23,15 @@ async fn main() {
         match  read_to_string(&batch_file) {
             Ok(file_content) => {
                 let mut videos = Vec::new();
-                for line in file_content.split('\n') {
+                for line in file_content.lines() {
+                    dbg!(line);
                     if let Ok(video) = parse_video(line) {
-                        videos.push(video);
+                        if video.desired_quality.is_some() {
+                            videos.push(video);
+                        }
+                        println!("[ERROR] '{}' does not include a quality. valid format should be as:\nhttps://stream.biomaze.ir/b6tnnbbopku1/iframe 720", line);
                     } else {
-                        println!("[ERROR] '{}' Is not a valid link", line);
+                        println!("[ERROR] '{}' is not a valid link", line);
                     }
                 }
                 println!("[Progress] Parsed all videos, count: {}", videos.len());

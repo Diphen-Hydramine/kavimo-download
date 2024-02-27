@@ -2,7 +2,7 @@
 
 ## Quick start
 
-1) Download the latests version from [here](https://github.com/Diphen-Hydramine/kavimo-download/releases/download/v1.2.0/kavimo-download.exe).
+1) Download the latests version from [here](https://github.com/Diphen-Hydramine/kavimo-download/releases/download/v1.3.0/kavimo-download.exe).
 2) Provide the iframe link to application.
 3) Have a happy ending :)
 
@@ -19,7 +19,15 @@ the only thing program needs from you is this link and the rest is managed autom
 
 Program supports a --file flag that can be used to do batch downloading
 
-```kavimo-download.exe --file example-batch-file.txt```
+`kavimo-download.exe --file example-batch-file.txt`
+
+Syntax for each line of file is as:
+
+`<video> <quality>`
+
+e.g.:
+
+`https://stream.kavimo.com/fqvpum2y8drk/embed 480`
 
 ## How does it work?
 * This app uses FFmpeg under the hood to convert mpeg stream to mp4 because mpeg streams kinda lag in most video playing software
