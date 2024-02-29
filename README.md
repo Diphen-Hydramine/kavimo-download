@@ -12,7 +12,7 @@ All kavimo hosted videoes are inside \<iframe> tags href attribute of those ifra
 
 the only thing program needs from you is this link and the rest is managed automatically.
 
-* You should turn off you anti virus software if you want to use the prebuilt version.
+* You should turn off your anti virus software if you want to use the prebuilt version.
 * Phone number and all other drm_text attributes are removed from the video.
 
 ## Batch Download
