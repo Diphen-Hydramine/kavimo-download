@@ -2,3 +2,4 @@
 Cargo.lock
 /.cargo/
 *.mp4
+/out/

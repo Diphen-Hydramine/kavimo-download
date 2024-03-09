@@ -261,10 +261,10 @@ impl Video {
         let mut download_handles = Vec::new();
 
 
-        let _ = fs::create_dir(&safe_title);
+        let _ = fs::create_dir(&self.video_id);
         let arc_cipher_key = Arc::new(cipher_key);
         let arc_cipher_iv = Arc::new(cipher_iv);
-        let arc_safe_title = Arc::new(safe_title.to_string());
+        let arc_directory_path = Arc::new(self.video_id.to_string());
 
         let total_size = embed_video_data.download[q_index].size.parse::<usize>()?;
         let pb = tqdm!(
@@ -283,8 +283,8 @@ impl Video {
             let iv = arc_cipher_iv.clone();
             let key = arc_cipher_key.clone();
             let pb = pb.clone();
-            let safe_title = arc_safe_title.clone();
-            let fut = Self::download_part(index, link.to_string(), client, permit, iv, key, q_index, pb, safe_title);
+            let directory_path = arc_directory_path.clone();
+            let fut = Self::download_part(index, link.to_string(), client, permit, iv, key, q_index, pb, directory_path);
             let handle = tokio::spawn(fut);
             download_handles.push(handle);
         }        
@@ -294,7 +294,7 @@ impl Video {
         }
 
 
-        let directory_path = Path::new(&safe_title);
+        let directory_path = Path::new(&self.video_id);
         let mut outfile = fs::File::create(directory_path.join("placeholder.mpeg"))?;
         for index in 0..part_links.len() {
             let name = format!("Vpart-{:010}-{}", index, q_index);
@@ -324,18 +324,18 @@ impl Video {
             );
         }
 
-        println!("[Progress] mp4 video created");
+        println!("[Progress] Mp4 video created");
 
         fs::remove_dir_all(directory_path)?;
 
-        println!("[Progress] directory deleted");
+        println!("[Progress] Directory deleted");
 
         Ok(())
     }
 
-    async fn download_part(index: usize, link: String, client: Client, _permit: OwnedSemaphorePermit, iv: Arc<Vec<u8>>, key: Arc<Vec<u8>>, q_index: usize, pb: Arc<Mutex<Bar>>, safe_title: Arc<String>) {
+    async fn download_part(index: usize, link: String, client: Client, _permit: OwnedSemaphorePermit, iv: Arc<Vec<u8>>, key: Arc<Vec<u8>>, q_index: usize, pb: Arc<Mutex<Bar>>, directory_path: Arc<String>) {
 
-        let path = Path::new(safe_title.as_str());
+        let path = Path::new(directory_path.as_str());
         let name = format!("Vpart-{:010}-{}", index, q_index);
         let file_path = path.join(name);
 
@@ -362,7 +362,15 @@ impl Video {
 
         let decrypted_bytes = cipher.decrypt_padded_mut::<Pkcs7>(&mut bytes).unwrap();
 
-        let mut file = fs::File::create(file_path).unwrap();
+        let file = fs::File::create(&file_path);
+        let mut file = match file {
+            Ok(x) => x,
+            Err(err) => {
+                let bad_file_path = file_path.to_string_lossy();
+                panic!("Cannot Open file at path {}\n{}", &bad_file_path, err.to_string());
+            }
+        };
+
         file.write_all(decrypted_bytes).unwrap();
 
         let mut bar = pb.lock().unwrap();
