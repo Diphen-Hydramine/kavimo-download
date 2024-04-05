@@ -31,12 +31,16 @@ pub trait TimedDownload {
 
 impl TimedDownload for Option<TimeRange> {
     fn should_coutinue(&self) -> bool {
-        if let Some(ref timer) = self {
-            if timer.now_in_range() {
-                return true;
+        match self {
+            Some(timer) => {
+                if timer.now_in_range() {
+                    return true;
+                } else {
+                    return false;
+                }
             }
+            None => true
         }
-        false
     }
 }
 
