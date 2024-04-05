@@ -1,5 +1,6 @@
 /target/
 Cargo.lock
 /.cargo/
+/chn2rbqavgjt/
 *.mp4
 /out/

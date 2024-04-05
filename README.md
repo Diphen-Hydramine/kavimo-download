@@ -17,7 +17,7 @@ the only thing program needs from you is this link and the rest is managed autom
 
 ## Batch Download
 
-Program supports a --file flag that can be used to do batch downloading
+Program supports a `--file` flag that can be used to do batch downloading
 
 `kavimo-download.exe --file example-batch-file.txt`
 
@@ -32,6 +32,16 @@ e.g.:
 ```
 https://stream.kavimo.com/fqvpum2y8drk/embed 480
 https://stream.kavimo.com/fqvpum2y8drk/embed
+```
+
+## Timer
+
+Only if using the batch download capability you can also use `--timer` flag to specify a time range in which the program can run
+
+Syntax:
+```
+kavimo-download.exe --file example-batch-file.txt --timer 02:30:00-07:00:00
+kavimo-download.exe --file example-batch-file.txt --timer 22:00:00-04:00:00
 ```
 
 ## How does it work?

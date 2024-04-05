@@ -1,30 +1,40 @@
-use std::{fs::read_to_string, io::stdin};
-use clap::Parser;
+use std::fs::read_to_string;
+use std::io::stdin;
+use clap::Parser as _;
 
 mod video;
-
+mod arguments;
+mod timer;
 mod utils;
-use utils::parse_video;
+use utils::*;
 
+use crate::timer::TimedDownload as _;
 
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct Args {
-    #[arg(long)]
-    file: Option<String>,
-}
 
 #[tokio::main]
 async fn main() {
-
-    let args = Args::parse();
+    let args = arguments::KavimoArgs::parse();
+    if !args.validate() {
+        return ;
+    }
 
     if let Some(batch_file) = args.file {
-        match  read_to_string(&batch_file) {
+        match read_to_string(&batch_file) {
             Ok(file_content) => {
                 let mut videos = Vec::new();
+                let time_range = match args.timer {
+                    Some(x) => {
+                        match timer::parse_time(&x) {
+                            Ok(time_range) => Some(time_range),
+                            Err(_) => {
+                                println!("[ERROR] '{}' is not a valid timer", &x);
+                                return ;
+                            }
+                        }
+                    }
+                    None => None
+                };
                 for line in file_content.lines() {
-                    dbg!(line);
                     if let Ok(video) = parse_video(line) {
                         videos.push(video);
                     } else {
@@ -33,7 +43,14 @@ async fn main() {
                 }
                 println!("[Progress] Parsed all videos, count: {}", videos.len());
                 println!("[Progress] Starting download");
-                for video in videos {
+                for mut video in videos {
+                    if let Some(ref timer) = time_range {
+                        video.set_time_range(timer.clone()).await;
+                    }
+                    if !time_range.should_coutinue() {
+                        println!("[INFO] Exited the time range specified stopping the program");
+                        return ;
+                    }
                     match video.download(true).await {
                         Ok(_) => (),
                         Err(x) => {
@@ -43,15 +60,19 @@ async fn main() {
                 }
             }
             Err(err) => {
-                println!("Cannot open input file: '{}' due {}", &batch_file, err.to_string());
-            } 
+                println!(
+                    "Cannot open input file: '{}' due {}",
+                    &batch_file,
+                    err.to_string()
+                );
+            }
         }
 
         std::process::exit(0);
-    } 
+    }
 
-    println!("Enter video iframe url: (e.g. https://stream.biomaze.ir/b6tnnbbopku1/iframe)");
-    let mut user_input = String::new(); 
+    println!("Enter video iframe url: (e.g. https://stream.kavimo.com/chn2rbqavgjt/embed)");
+    let mut user_input = String::new();
     let mut input_valid = false;
 
     while !input_valid {
@@ -64,8 +85,7 @@ async fn main() {
             Ok(video) => {
                 input_valid = true;
 
-                println!("[Video host] {}", &video.video_host);
-                println!("[Video id] {}", &video.video_id);
+                video.print_extracted().await;
 
                 match video.download(false).await {
                     Ok(_) => {
@@ -80,10 +100,5 @@ async fn main() {
                 println!("Cannot parse data from url provided try again: ");
             }
         }
-        
     }
-
-
 }
-
-

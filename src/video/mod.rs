@@ -1,8 +1,10 @@
+use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Key,
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+use kdam::{tqdm, Bar, BarExt};
 use pbkdf2::pbkdf2_hmac;
 use regex::Regex;
 use reqwest::{
@@ -12,17 +14,19 @@ use reqwest::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use tokio::sync::{Semaphore, OwnedSemaphorePermit};
-use std::{sync::Mutex, path::Path, io::Write};
 use std::sync::Arc;
-use std::fs;
-use kdam::{tqdm, Bar, BarExt};
-use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
+use std::{collections::LinkedList, fs};
+use std::{
+    io::Write,
+    path::{Path, PathBuf},
+};
+use tokio::sync::Mutex;
+use tokio::sync::{OwnedSemaphorePermit, RwLock, Semaphore};
 
 mod convert;
 use convert::convert_video_from_mpeg_to_mp4;
 
-
+use crate::timer::{TimeRange, TimedDownload as _};
 
 #[derive(Serialize, Deserialize)]
 pub struct VideoQuality {
@@ -38,14 +42,31 @@ pub struct VideoData {
     download: Vec<VideoQuality>,
 }
 
-pub struct Video {
-    pub video_id: String,
-    pub video_host: String,
-    pub desired_quality: Option<String>,
+struct VideoInner {
+    video_id: String,
+    video_host: String,
+    desired_quality: Option<String>,
+    quality_index: usize,
+    time_range: Option<TimeRange>,
     client: Client,
 }
 
+#[derive(Clone)]
+pub struct Video {
+    inner: Arc<RwLock<VideoInner>>,
+}
+
 impl Video {
+    pub async fn print_extracted(&self) {
+        let inner = self.inner.read().await;
+        println!("[Video host] {}", &inner.video_host);
+        println!("[Video id] {}", &inner.video_id);
+    }
+
+    pub async fn set_time_range(&mut self, time_range: TimeRange) {
+        self.inner.write().await.time_range = Some(time_range);
+    }
+
     pub fn new(video_id: String, video_host: String, desired_quality: Option<String>) -> Self {
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -64,10 +85,14 @@ impl Video {
             .unwrap();
 
         Self {
-            video_id,
-            video_host,
-            desired_quality,
-            client,
+            inner: Arc::new(RwLock::new(VideoInner {
+                video_id,
+                video_host,
+                quality_index: 0,
+                desired_quality,
+                time_range: None,
+                client,
+            })),
         }
     }
 
@@ -97,11 +122,21 @@ impl Video {
     }
 
     pub async fn download(&self, is_in_batch: bool) -> Result<(), Box<dyn std::error::Error>> {
+        let mut self_data = self.inner.write().await;
+
+        let download_timer = self_data.time_range.clone();
+        if !self_data.time_range.should_coutinue() {
+            return Err("Timer went out of range".into());
+        }
+
         println!("[Progress] fetching embed files");
 
-        let embed_url = format!("https://{}/{}/embed", &self.video_host, &self.video_id);
+        let embed_url = format!(
+            "https://{}/{}/embed",
+            &self_data.video_host, &self_data.video_id
+        );
 
-        let embed_res = self.client.get(&embed_url).send().await?;
+        let embed_res = self_data.client.get(&embed_url).send().await?;
         if embed_res.status() != 200 {
             println!("[Error] cannot get embed.js file");
             return Err("".into());
@@ -129,7 +164,7 @@ impl Video {
         }
 
         let mut safe_title = embed_video_data.title;
-        for char in  r#"\/:*?"<>|"#.chars() {
+        for char in r#"\/:*?"<>|"#.chars() {
             safe_title = safe_title.replace(char, "-");
         }
 
@@ -137,17 +172,17 @@ impl Video {
             Ok(_) => {
                 return Err("Video already downloaded".into());
             }
-            Err(_) => ()
+            Err(_) => (),
         }
 
         println!("[Progress] Fetching playlists");
 
         let playlist_url = format!(
             "https://{}/{}.m3u8",
-            &self.video_host, &embed_video_data.playlist
+            &self_data.video_host, &embed_video_data.playlist
         );
 
-        let playlist_res = self.client.get(playlist_url).send().await?;
+        let playlist_res = self_data.client.get(playlist_url).send().await?;
         if playlist_res.status() != 200 {
             println!("[Error] Cannot get playlist file");
             return Err("".into());
@@ -156,7 +191,7 @@ impl Video {
         let encrypted_playlist_text = playlist_res.text().await?;
 
         let playlist_text = Self::decrypt_m3u8(&embed_video_data.msgn, &encrypted_playlist_text)?;
-        if !is_in_batch && self.desired_quality.is_none() {
+        if !is_in_batch && self_data.desired_quality.is_none() {
             println!("[Prompt] Select desired quality: ");
             for (index, video_quality) in embed_video_data.download.iter().enumerate() {
                 println!("[Choice] {} -> {}", video_quality.name, index);
@@ -167,9 +202,16 @@ impl Video {
         let mut valid_selection = false;
         let mut selected_playlist_link = "";
         let mut q_index = 0;
-        if let Some(desired_quality) = &self.desired_quality {
+        if let Some(desired_quality) = &self_data.desired_quality {
             let desired_quality = desired_quality.to_owned() + "p";
-            let found_index = embed_video_data.download.iter().position(|x| x.name == desired_quality).ok_or(format!("Specified quality {} is unavalable in video", &desired_quality))?;
+            let found_index = embed_video_data
+                .download
+                .iter()
+                .position(|x| x.name == desired_quality)
+                .ok_or(format!(
+                    "Specified quality {} is unavalable in video",
+                    &desired_quality
+                ))?;
             let target_line = (found_index + 1) * 2;
             match playlist_text.split('\n').nth(target_line) {
                 Some(link) => {
@@ -187,7 +229,7 @@ impl Video {
             if !is_in_batch {
                 index_string.clear();
                 std::io::stdin().read_line(&mut index_string)?;
-                index_string = index_string.trim().to_string(); 
+                index_string = index_string.trim().to_string();
             }
             match index_string.parse::<usize>() {
                 Ok(index) => {
@@ -212,7 +254,9 @@ impl Video {
             }
         }
 
-        let playlist_m3u8_res = self.client.get(selected_playlist_link).send().await?;
+        self_data.quality_index = q_index;
+
+        let playlist_m3u8_res = self_data.client.get(selected_playlist_link).send().await?;
         if playlist_m3u8_res.status() != 200 {
             println!("[Error] Cannot get playlist parts");
             return Err("".into());
@@ -222,7 +266,7 @@ impl Video {
         let playlist_text = Self::decrypt_m3u8(&embed_video_data.msgn, &encrypted_playlist_text)?;
         let lines = playlist_text.split('\n');
 
-        let mut part_links = Vec::new();
+        let mut part_links = LinkedList::new();
         let mut cipher_iv = Vec::new();
         let mut cipher_key = Vec::new();
 
@@ -239,7 +283,7 @@ impl Video {
 
                 match line.split('"').nth(1) {
                     Some(link) => {
-                        let res = self.client.get(link).send().await?;
+                        let res = self_data.client.get(link).send().await?;
                         println!("[Progress] Key uri reponse code: '{}'", res.status());
                         if res.status() != 200 {
                             return Err("Key uri returned none 200 status".into());
@@ -252,21 +296,21 @@ impl Video {
                 }
             }
             if line.starts_with("https://") {
-                part_links.push(line);
+                part_links.push_back(line.to_string());
             }
         }
-
 
         let download_semaphore = Arc::new(Semaphore::new(10));
         let mut download_handles = Vec::new();
 
-
-        let _ = fs::create_dir(&self.video_id);
+        let _ = fs::create_dir(&self_data.video_id);
         let arc_cipher_key = Arc::new(cipher_key);
         let arc_cipher_iv = Arc::new(cipher_iv);
-        let arc_directory_path = Arc::new(self.video_id.to_string());
 
-        let total_size = embed_video_data.download[q_index].size.parse::<usize>()?;
+        let total_size = embed_video_data.download[self_data.quality_index]
+            .size
+            .parse::<usize>()?;
+
         let pb = tqdm!(
             total = total_size,
             unit_scale = true,
@@ -275,90 +319,108 @@ impl Video {
         );
 
         let pb = Arc::new(Mutex::new(pb));
-        
-        for (index, link) in part_links.iter().enumerate() {
+        let directory_path = PathBuf::from(&self_data.video_id);
+        drop(self_data);
+
+        let mut index_counter = 0;
+        while let Some(link) = part_links.pop_front() {
+            if !download_timer.should_coutinue() {
+                break;
+            }
+            let index = index_counter;
+            index_counter += 1;
             let semaphore = download_semaphore.clone();
             let permit = semaphore.acquire_owned().await?;
-            let client = self.client.clone();
             let iv = arc_cipher_iv.clone();
             let key = arc_cipher_key.clone();
             let pb = pb.clone();
-            let directory_path = arc_directory_path.clone();
-            let fut = Self::download_part(index, link.to_string(), client, permit, iv, key, q_index, pb, directory_path);
+            let fut = self.clone().download_part(index, link, permit, iv, key, pb);
             let handle = tokio::spawn(fut);
             download_handles.push(handle);
-        }        
+        }
 
         for handle in download_handles {
             handle.await?;
         }
 
+        let self_data = self.inner.read().await;
 
-        let directory_path = Path::new(&self.video_id);
-        let mut outfile = fs::File::create(directory_path.join("placeholder.mpeg"))?;
-        for index in 0..part_links.len() {
-            let name = format!("Vpart-{:010}-{}", index, q_index);
-            let file_content = fs::read(directory_path.join(name))?;
-            outfile.write_all(&file_content)?;
+        if !download_timer.should_coutinue() {
+            return Err("Timer went out of range in middle of download".into());
         }
 
         println!("[Progress] Created mpeg video");
 
-        let input_bytes = directory_path.join("placeholder.mpeg");
-        let input_bytes = input_bytes.to_string_lossy();
-        let input_bytes = input_bytes.as_bytes();
-        let mut input_bytes_vec = Vec::with_capacity(input_bytes.len() + 1);
-        input_bytes_vec.extend_from_slice(&input_bytes);
-        input_bytes_vec.push(0b0u8);
+        let mut outfile = fs::File::create(directory_path.join("placeholder.mpeg"))?;
+        for index in 0..index_counter {
+            let name = Self::part_name(index, self_data.quality_index);
+            let file_content = fs::read(directory_path.join(name))?;
+            outfile.write_all(&file_content)?;
+        }
 
-        let output_bytes = format!("{}.mp4", &safe_title);
-        let output_bytes = output_bytes.as_bytes();
-        let mut output_bytes_vec = Vec::with_capacity(output_bytes.len() + 1);
-        output_bytes_vec.extend_from_slice(&output_bytes);
-        output_bytes_vec.push(0b0u8);
+        let input_file = directory_path.join("placeholder.mpeg\0");
+        let input_file = input_file
+            .to_str()
+            .ok_or("Cannot convert PathBuf to &str")?;
+        let output_file = format!("{}.mp4\0", &safe_title);
 
         unsafe {
             convert_video_from_mpeg_to_mp4(
-                input_bytes_vec.as_ptr() as *const libc::c_char,
-                output_bytes_vec.as_ptr() as *const libc::c_char
+                input_file.as_ptr() as *const libc::c_char,
+                output_file.as_ptr() as *const libc::c_char,
             );
         }
 
         println!("[Progress] Mp4 video created");
 
-        fs::remove_dir_all(directory_path)?;
+        let _ = fs::remove_dir_all(directory_path);
 
         println!("[Progress] Directory deleted");
 
         Ok(())
     }
 
-    async fn download_part(index: usize, link: String, client: Client, _permit: OwnedSemaphorePermit, iv: Arc<Vec<u8>>, key: Arc<Vec<u8>>, q_index: usize, pb: Arc<Mutex<Bar>>, directory_path: Arc<String>) {
+    fn part_name(index: usize, quality_index: usize) -> String {
+        format!("Vpart-{:010}-{:02}.ts", index, quality_index)
+    }
 
-        let path = Path::new(directory_path.as_str());
-        let name = format!("Vpart-{:010}-{}", index, q_index);
+    async fn download_part(
+        self,
+        index: usize,
+        link: String,
+        _permit: OwnedSemaphorePermit,
+        iv: Arc<Vec<u8>>,
+        key: Arc<Vec<u8>>,
+        pb: Arc<Mutex<Bar>>,
+    ) {
+        let self_inner = self.inner.read().await;
+
+        let path = Path::new(&self_inner.video_id);
+        let name = Self::part_name(index, self_inner.quality_index);
         let file_path = path.join(name);
 
         match fs::metadata(&file_path) {
             Ok(file) => {
                 let size = file.len();
-                let mut bar = pb.lock().unwrap();
+                let mut bar = pb.lock().await;
                 bar.update(size as usize).unwrap();
-                return ;
+                return;
             }
-            Err(_) => ()
+            Err(_) => (),
         }
 
-        let res = client.get(&link).send().await.unwrap();
-        // corrupted part 
-        if res.status() == 502 || res.status() == 504 {            
+        let res = self_inner.client.get(link).send().await.unwrap();
+
+        // corrupted part
+        if res.status() == 502 || res.status() == 504 {
             println!("[WARNING] Part {} of video seems to be corrupted you will experience some freezeing", index);
             let _file = fs::File::create(file_path).unwrap();
-            return ;
+            return;
         }
         let bytes = res.bytes().await.unwrap();
         let mut bytes = bytes.to_vec();
-        let cipher = cbc::Decryptor::<aes::Aes128>::new(key.as_slice().into(), iv.as_slice().into());
+        let cipher =
+            cbc::Decryptor::<aes::Aes128>::new(key.as_slice().into(), iv.as_slice().into());
 
         let decrypted_bytes = cipher.decrypt_padded_mut::<Pkcs7>(&mut bytes).unwrap();
 
@@ -367,14 +429,17 @@ impl Video {
             Ok(x) => x,
             Err(err) => {
                 let bad_file_path = file_path.to_string_lossy();
-                panic!("Cannot Open file at path {}\n{}", &bad_file_path, err.to_string());
+                panic!(
+                    "Cannot Open file at path {}\n{}",
+                    &bad_file_path,
+                    err.to_string()
+                );
             }
         };
 
         file.write_all(decrypted_bytes).unwrap();
 
-        let mut bar = pb.lock().unwrap();
+        let mut bar = pb.lock().await;
         bar.update(decrypted_bytes.len()).unwrap();
-
     }
 }
