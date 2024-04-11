@@ -8,7 +8,6 @@ use kdam::{tqdm, Bar, BarExt};
 use pbkdf2::pbkdf2_hmac;
 use regex::Regex;
 use reqwest::{
-    self,
     header::{self, HeaderMap},
     Client,
 };
@@ -125,9 +124,7 @@ impl Video {
         let mut self_data = self.inner.write().await;
 
         let download_timer = self_data.time_range.clone();
-        if !self_data.time_range.should_coutinue() {
-            return Err("Timer went out of range".into());
-        }
+        self_data.time_range.should_coutinue();
 
         println!("[Progress] fetching embed files");
 
@@ -324,9 +321,7 @@ impl Video {
 
         let mut index_counter = 0;
         while let Some(link) = part_links.pop_front() {
-            if !download_timer.should_coutinue() {
-                break;
-            }
+            download_timer.should_coutinue();
             let index = index_counter;
             index_counter += 1;
             let semaphore = download_semaphore.clone();
@@ -345,9 +340,7 @@ impl Video {
 
         let self_data = self.inner.read().await;
 
-        if !download_timer.should_coutinue() {
-            return Err("Timer went out of range in middle of download".into());
-        }
+        download_timer.should_coutinue();
 
         println!("[Progress] Created mpeg video");
 

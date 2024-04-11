@@ -47,10 +47,7 @@ async fn main() {
                     if let Some(ref timer) = time_range {
                         video.set_time_range(timer.clone()).await;
                     }
-                    if !time_range.should_coutinue() {
-                        println!("[INFO] Exited the time range specified stopping the program");
-                        return ;
-                    }
+                    time_range.should_coutinue();
                     match video.download(true).await {
                         Ok(_) => (),
                         Err(x) => {

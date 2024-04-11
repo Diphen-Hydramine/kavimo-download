@@ -26,11 +26,23 @@ pub fn parse_time(input: &str) -> Result<TimeRange, Box<dyn std::error::Error>> 
 }
 
 pub trait TimedDownload {
-    fn should_coutinue(&self) -> bool;
+    fn should_coutinue(&self);
+    fn is_in_range(&self) -> bool;
 }
 
 impl TimedDownload for Option<TimeRange> {
-    fn should_coutinue(&self) -> bool {
+    fn should_coutinue(&self) {
+        let mut is_first_encounter = true;
+        while !self.is_in_range() {
+            if is_first_encounter {
+                println!("[INFO] Timer is out of range waiting for timer to get in range");
+            }
+            is_first_encounter = false;
+            std::thread::sleep(std::time::Duration::from_secs(10));
+        }
+    }
+
+    fn is_in_range(&self) -> bool {
         match self {
             Some(timer) => {
                 if timer.now_in_range() {
